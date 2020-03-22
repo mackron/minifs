@@ -1,0 +1,6 @@
+a.txt
+b|folder
+ d|folder
+  f.txt
+ e.txt
+c|folder

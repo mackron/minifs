@@ -1,0 +1,1 @@
+minifs is a library for common file system operations.
