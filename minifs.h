@@ -240,6 +240,13 @@ mfs_result mfs_open_and_read_text_file(const char* pFilePath, size_t* pFileSizeO
 
 
 /*
+High level API for opening and writing a file.
+*/
+mfs_result mfs_open_and_write_file(const char* pFilePath, size_t fileSize, const void* pFileData);
+
+
+
+/*
 Current Directory
 */
 
@@ -1562,7 +1569,7 @@ mfs_int64 mfs_ftell(FILE* pFile)
 }
 
 
-static mfs_result mfs_open_and_read_file_with_extra_data(const char* filePath, size_t* pFileSizeOut, void** ppFileData, size_t extraBytes)
+static mfs_result mfs_open_and_read_file_with_extra_data(const char* pFilePath, size_t* pFileSizeOut, void** ppFileData, size_t extraBytes)
 {
     mfs_result result;
     mfs_uint64 fileSize;
@@ -1570,9 +1577,11 @@ static mfs_result mfs_open_and_read_file_with_extra_data(const char* filePath, s
     void* pFileData;
     size_t bytesRead;
 
-    MFS_ASSERT(filePath != NULL);
+    if (pFilePath == NULL) {
+        return MFS_INVALID_ARGS;
+    }
 
-    result = mfs_fopen(&pFile, filePath, "rb");
+    result = mfs_fopen(&pFile, pFilePath, "rb");
     if (result != MFS_SUCCESS) {
         return result;
     }
@@ -1633,6 +1642,27 @@ mfs_result mfs_open_and_read_text_file(const char* pFilePath, size_t* pFileSizeO
     if (pFileSizeOut != NULL) {
         *pFileSizeOut = fileSize;
     }
+
+    return result;
+}
+
+
+mfs_result mfs_open_and_write_file(const char* pFilePath, size_t fileSize, const void* pFileData)
+{
+    mfs_result result;
+    FILE* pFile;
+
+    if (pFilePath == NULL) {
+        return MFS_INVALID_ARGS;
+    }
+
+    result = mfs_fopen(&pFile, pFilePath, "wb");
+    if (result != MFS_SUCCESS) {
+        return result;
+    }
+
+    result = mfs_fwrite(pFile, pFileData, fileSize, NULL);
+    mfs_fclose(pFile);
 
     return result;
 }
