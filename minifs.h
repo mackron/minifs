@@ -679,6 +679,9 @@ IMPLEMENTATION
 *************************************************************************************************************************************************************
 ************************************************************************************************************************************************************/
 #if defined(MINIFS_IMPLEMENTATION)
+#ifndef minifs_c
+#define minifs_c
+
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -3445,7 +3448,8 @@ void mfs_free(void* p)
     MFS_FREE(p);
 }
 
-#endif
+#endif  /* minifs_c */
+#endif  /* MINIFS_IMPLEMENTATION */
 
 
 /*
