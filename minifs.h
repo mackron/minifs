@@ -247,7 +247,7 @@ mfs_result mfs_open_and_write_file(const char* pFilePath, size_t fileSize, const
 
 
 /*
-Current Directory
+Directory Management
 */
 
 /*
@@ -263,6 +263,11 @@ will be returned.
 */
 mfs_result mfs_get_current_directory(char* pDirectoryPath, size_t directoryPathSizeInBytes);
 
+/*
+Creates a directory.
+*/
+mfs_result mfs_mkdir(const char* pDirectory, mfs_bool32 recursive);
+
 
 /*
 Checks if the given path refers to an existing directory.
@@ -273,6 +278,22 @@ mfs_bool32 mfs_is_directory(const char* pPath);
 Checks if a file exists.
 */
 mfs_bool32 mfs_file_exists(const char* pFilePath);
+
+
+/*
+Copies a file.
+*/
+mfs_result mfs_copy_file(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists);
+
+/*
+Moves a file.
+*/
+mfs_result mfs_move_file(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists);
+
+/*
+Deletes a file or folder.
+*/
+mfs_result mfs_delete_file(const char* pFilePath);
 
 
 /*
@@ -489,7 +510,7 @@ Checks whether or not the two paths are equal.
 path1 [in] The first path.
 path2 [in] The second path.
 
-Returns true if the paths are equal; false otherwise.
+Returns whether or not the operation is successful.
 
 This is case-sensitive.
 
@@ -528,7 +549,7 @@ dst            [out] The destination buffer.
 dstSizeInBytes [in]  The size of the buffer pointed to by "pathOut", in bytes.
 src            [in]  The input path.
 
-Returns the length of the returned string, _including_ the null terminator; 0 on error.
+Returns whether or not the operation is successful.
 
 As an example, when "src" is "C:/MyFolder/MyFile", the output will be "C:/MyFolder". Note that there is no trailing slash.
 
@@ -554,7 +575,7 @@ dstSizeInBytes [in]  The size of the buffer pointed to by "pathOut", in bytes.
 base           [in]  The base directory.
 other          [in]  The relative path to append to "base".
 
-Returns the length of the resulting string including the null terminator. Returns 0 on error.
+Returns whether or not the operation is successful.
 
 This assumes both paths are well formed and "other" is a relative path.
 
@@ -570,7 +591,7 @@ dstSizeInBytes [in]  The size of the buffer pointed to by "dst", in bytes.
 base           [in]  The base directory.
 iterator       [in]  The iterator to append.
 
-Returns the length of the resulting string including the null terminator. Returns 0 on error.
+Returns whether or not the operation is successful.
 
 This assumes both paths are well formed and "i" is a valid iterator.
 
@@ -586,7 +607,7 @@ dstSizeInBytes [in]  The size of the buffer pointed to by "dst", in bytes.
 base           [in]  The base directory.
 extension      [in]  The relative path to append to "base".
 
-Returns the length of the resulting string including the null terminator. Returns 0 on error.
+Returns whether or not the operation is successful.
 
 "pathOut" and "base" are allowed to be the same pointer, in which case the other path is appended in-place.
 */
@@ -600,7 +621,7 @@ dst            [out] A pointer to the buffer that will receive the path.
 dstSizeInBytes [in]  The size of the buffer pointed to by pathOut, in bytes.
 src            [in]  The path to clean.
 
-Returns the number of bytes written to the output buffer, including the null terminator.
+Returns whether or not the operation is successful.
 
 The output path will never be longer than the input path.
 
@@ -639,7 +660,7 @@ mfs_result mfs_path_remove_file_name_in_place(char* path, size_t* pDstLenOut);
 /*
 Converts an absolute path to a relative path.
 
-Returns true if the conversion was successful; false if there was an error.
+Returns whether or not the operation is successful.
 
 This will normalize every slash to forward slashes.
 */
@@ -1704,6 +1725,16 @@ mfs_result mfs_get_current_directory__win32(char* pDirectoryPath, size_t directo
 
     return MFS_SUCCESS;
 }
+
+mfs_result mfs_mkdir__win32(const char* pDirectoryPath)
+{
+    BOOL result = CreateDirectoryA(pDirectoryPath, NULL);
+    if (result) {
+        return MFS_SUCCESS;
+    }
+
+    return mfs_result_from_GetLastError(GetLastError());
+}
 #endif
 
 #if defined(MFS_POSIX)
@@ -1735,6 +1766,15 @@ mfs_result mfs_get_current_directory__posix(char* pDirectoryPath, size_t directo
     }
 
     return MFS_SUCCESS;
+}
+
+mfs_result mfs_mkdir__posix(const char* pDirectoryPath)
+{
+    if (mkdir(pDirectoryPath, 0777) == 0) {
+        return MFS_SUCCESS;
+    }
+
+    return mfs_result_from_errno(errno);
 }
 #endif
 
@@ -1769,6 +1809,136 @@ mfs_result mfs_get_current_directory(char* pDirectoryPath, size_t directoryPathS
 #endif
 }
 
+mfs_result mfs_mkdir(const char* pDirectory, mfs_bool32 recursive)
+{
+    if (pDirectory == NULL) {
+        return MFS_INVALID_ARGS;
+    }
+
+    if (pDirectory[0] == '\0') {
+        return MFS_SUCCESS; /* It's an empty directory which we'll treat as the current directory. The current directory must exist so we just pretend to be successful. */
+    }
+
+    if (recursive == MFS_FALSE) {
+    #if defined(MFS_WIN32)
+        return mfs_mkdir__win32(pDirectory);
+    #elif defined(MFS_POSIX)
+        return mfs_mkdir__posix(pDirectory);
+    #else
+        return MFS_INVALID_OPERATION;   /* Unsupported platform. */
+    #endif
+    } else {
+        /*
+        Getting here means we're creating the directory recursively. We keep iterating over each segment of the path until we find a directory that does
+        not exist, after which point we just keep creating directories until we reach the end.
+        */
+        mfs_result result;
+        mfs_path_iterator iterator;
+        char* pRunningPath = NULL;
+        size_t runningPathCap = 0;
+
+        result = mfs_path_first_segment(pDirectory, &iterator);
+        if (result != MFS_SUCCESS) {
+            return result;
+        }
+
+        runningPathCap = 256;
+        pRunningPath = (char*)MFS_MALLOC(runningPathCap);
+        if (pRunningPath == NULL) {
+            return MFS_OUT_OF_MEMORY;
+        }
+        mfs_strncpy_s(pRunningPath, runningPathCap, iterator.path + iterator.segment.offset, iterator.segment.length);
+
+
+        /* If it's an absolute path we want to skip the first segment as that will be the root directory . */
+        if (mfs_path_is_absolute(pDirectory)) {
+            result = mfs_path_next_segment(&iterator);
+            if (result != MFS_SUCCESS) {
+                if (result == MFS_AT_END) {
+                    return MFS_SUCCESS;
+                } else {
+                    return result;
+                }
+            }
+        }
+
+        /*
+        We need to loop over every segment until we find the first directory that does not exist. After that we then just create each sub-directory
+        until we reach the end of the path.
+        */
+        for (;;) {
+            /* We need to append the path segment to the running path. */
+            size_t newRunningPathLen;
+
+            /* Get the size of the new running path. */
+            result = mfs_path_append_iterator(NULL, 0, pRunningPath, iterator, &newRunningPathLen);
+            if (result != MFS_SUCCESS) {
+                MFS_FREE(pRunningPath);
+                return result;
+            }
+
+            /* Allocate memory for the running path if necessary. */
+            if (newRunningPathLen > runningPathCap+1) {
+                char* pNewRunningPath;
+                size_t newRunningPathCap = runningPathCap*2;
+                if (newRunningPathCap < newRunningPathLen+1) {
+                    newRunningPathCap = newRunningPathLen+1;
+                }
+
+                pNewRunningPath = (char*)MFS_REALLOC(pRunningPath, newRunningPathCap);
+                if (pNewRunningPath == NULL) {
+                    MFS_FREE(pRunningPath);
+                    return MFS_OUT_OF_MEMORY;
+                }
+
+                pRunningPath   = pNewRunningPath;
+                runningPathCap = newRunningPathCap;
+            }
+
+            /* Append the segment to the running path. */
+            result = mfs_path_append_iterator(pRunningPath, runningPathCap, pRunningPath, iterator, NULL);
+            if (result != MFS_SUCCESS) {
+                MFS_FREE(pRunningPath);
+                return result;  /* Should never hit this as any error should have been returned by the first call that we used to measure the string. */
+            }
+
+            /* Now that we (finally!) have the running path we can check whether or not it exists. If it does not exists, it's created, so long as we're not looking at a file in which case we have an error. */
+            if (mfs_file_exists(pRunningPath)) {
+                MFS_FREE(pRunningPath);
+                return MFS_INVALID_OPERATION;   /* The path refers to a file. */
+            }
+
+            if (mfs_is_directory(pRunningPath) == MFS_FALSE) {
+            #if defined(MFS_WIN32)
+                result = mfs_mkdir__win32(pRunningPath);
+            #elif defined(MFS_POSIX)
+                result = mfs_mkdir__posix(pRunningPath);
+            #else
+                result = MFS_INVALID_OPERATION;   /* Unsupported platform. */
+            #endif
+                if (result != MFS_SUCCESS) {
+                    MFS_FREE(pRunningPath);
+                    return result;  /* An error occurred when creating the directory. */
+                }
+            }
+
+            /* We're done with this segment so move on to the next. */
+            result = mfs_path_next_segment(&iterator);
+            if (result != MFS_SUCCESS) {
+                if (result == MFS_AT_END) {
+                    break;  /* We're done. */
+                } else {
+                    MFS_FREE(pRunningPath);
+                    return result;
+                }
+            }
+        }
+
+        MFS_FREE(pRunningPath);
+        return MFS_SUCCESS;
+    }
+}
+
 
 #if defined(MFS_WIN32)
 mfs_bool32 mfs_is_directory__win32(const char* pPath)
@@ -1789,6 +1959,53 @@ mfs_bool32 mfs_file_exists__win32(const char* pFilePath)
 
     attributes = GetFileAttributesA(pFilePath);
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+mfs_result mfs_copy_file__win32(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists)
+{
+    BOOL result = CopyFileA(pSrcFilePath, pDstFilePath, failIfExists);
+    if (result) {
+        return MFS_SUCCESS;
+    }
+
+    return mfs_result_from_GetLastError(GetLastError());
+}
+
+mfs_result mfs_move_file__win32(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists)
+{
+    DWORD dwFlags;
+    BOOL result;
+
+    dwFlags = MOVEFILE_COPY_ALLOWED;
+    if (failIfExists == MFS_FALSE) {
+        dwFlags |= MOVEFILE_REPLACE_EXISTING;
+    }
+
+    result = MoveFileExA(pSrcFilePath, pDstFilePath, dwFlags);
+    if (result) {
+        return MFS_SUCCESS;
+    }
+
+    return mfs_result_from_GetLastError(GetLastError());
+}
+
+mfs_result mfs_delete_file__win32(const char* pFilePath)
+{
+    BOOL wasSuccessful;
+    DWORD attributes;
+
+    attributes = GetFileAttributesA(pFilePath);
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+        wasSuccessful = DeleteFileA(pFilePath);
+    } else {
+        wasSuccessful = RemoveDirectoryA(pFilePath);
+    }
+
+    if (wasSuccessful) {
+        return MFS_SUCCESS;
+    }
+
+    return mfs_result_from_GetLastError(GetLastError());
 }
 #endif
 
@@ -1817,6 +2034,29 @@ mfs_bool32 mfs_file_exists__posix(const char* pFilePath)
     }
 
     return (info.st_mode & S_IFDIR) == 0;
+}
+
+mfs_result mfs_copy_file__posix(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists)
+{
+    /* TODO: Implement me. */
+}
+
+mfs_result mfs_move_file__posix(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists)
+{
+    if (rename(pSrcFilePath, pDstFilePath) == 0) {
+        return MFS_SUCCESS;
+    }
+
+    return mfs_result_from_errno(errno);
+}
+
+mfs_result mfs_delete_file__posix(const char* pFilePath)
+{
+    if (remove(pFilePath) == 0) {
+        return MFS_SUCCESS;
+    }
+
+    return mfs_result_from_errno(errno);
 }
 #endif
 
@@ -1847,6 +2087,52 @@ mfs_bool32 mfs_file_exists(const char* pFilePath)
     return mfs_file_exists__posix(pFilePath);
 #else
     return MFS_FALSE;
+#endif
+}
+
+
+mfs_result mfs_copy_file(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists)
+{
+    if (pSrcFilePath == NULL || pDstFilePath == NULL) {
+        return MFS_INVALID_ARGS;
+    }
+
+#if defined(MFS_WIN32)
+    return mfs_copy_file__win32(pSrcFilePath, pDstFilePath, failIfExists);
+#elif defined(MFS_POSIX)
+    return mfs_copy_file__posix(pSrcFilePath, pDstFilePath, failIfExists);
+#else
+    return MFS_NOT_IMPLEMENTED;
+#endif
+}
+
+mfs_result mfs_move_file(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists)
+{
+    if (pSrcFilePath == NULL || pDstFilePath == NULL) {
+        return MFS_INVALID_ARGS;
+    }
+
+#if defined(MFS_WIN32)
+    return mfs_move_file__win32(pSrcFilePath, pDstFilePath, failIfExists);
+#elif defined(MFS_POSIX)
+    return mfs_move_file__posix(pSrcFilePath, pDstFilePath, failIfExists);
+#else
+    return MFS_NOT_IMPLEMENTED;
+#endif
+}
+
+mfs_result mfs_delete_file(const char* pFilePath)
+{
+    if (pFilePath == NULL) {
+        return MFS_INVALID_ARGS;
+    }
+
+#if defined(MFS_WIN32)
+    return mfs_delete_file__win32(pFilePath);
+#elif defined(MFS_POSIX)
+    return mfs_delete_file__posix(pFilePath);
+#else
+    return MFS_NOT_IMPLEMENTED;
 #endif
 }
 
@@ -3038,7 +3324,7 @@ static size_t mfs_path_clean__try_write(mfs_path_iterator* iterators, unsigned i
         }
 
         if (pathOut != NULL) {
-            mfs_strncpy_s(pathOut, pathOutSize, iSegment.path + iSegment.segment.offset, iSegment.segment.length);
+            MFS_COPY_MEMORY(pathOut, iSegment.path + iSegment.segment.offset, iSegment.segment.length); /* Don't use strncpy_s() here because we don't want to do anything with the null terminator at this point (that is set once at a higer level). */
         }
 
         bytesWritten += iSegment.segment.length;
