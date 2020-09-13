@@ -3452,7 +3452,12 @@ mfs_result mfs_path_remove_extension(char* dst, size_t dstSizeInBytes, const cha
     ext = mfs_path_extension(src);
     if (ext == NULL || ext[0] == '\0') {
         /* No extension. */
-        return mfs_path_copy(dst, dstSizeInBytes, src, pDstLenOut);
+        if (dst == src) {
+            *pDstLenOut = (ext - dst);
+            return MFS_SUCCESS;
+        } else {
+            return mfs_path_copy(dst, dstSizeInBytes, src, pDstLenOut);
+        }
     } else {
         /* Have extension. */
         size_t dstLen = (size_t)(ext - src - 1);    /* -1 for the period. */
@@ -3461,7 +3466,12 @@ mfs_result mfs_path_remove_extension(char* dst, size_t dstSizeInBytes, const cha
             *pDstLenOut = dstLen;
         }
 
-        return mfs_result_from_errno(mfs_strncpy_s(dst, dstSizeInBytes, src, dstLen));
+        if (dst == src) {
+            dst[dstLen] = '\0';
+            return MFS_SUCCESS;
+        } else {
+            return mfs_result_from_errno(mfs_strncpy_s(dst, dstSizeInBytes, src, dstLen));
+        }
     }
 }
 
@@ -3491,7 +3501,7 @@ mfs_result mfs_path_remove_extension_in_place(char* path, size_t* pDstLenOut)
             *pDstLenOut = dstLen;
         }
 
-        path[dstLen+1] = '\0';
+        path[dstLen] = '\0';
     }
 
     return MFS_SUCCESS;
