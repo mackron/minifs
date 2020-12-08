@@ -221,6 +221,15 @@ Retrieves the read/write point of a stdio FILE object.
 */
 mfs_int64 mfs_ftell(FILE* pFile);
 
+/*
+Retrieves information about a stdio FILE object.
+*/
+#if defined(_MSC_VER)
+mfs_result mfs_fstat(FILE* pFile, struct _stat64* info);
+#else
+mfs_result mfs_fstat(FILE* pFile, struct stat64* info);
+#endif
+
 
 
 /*
@@ -1590,6 +1599,35 @@ mfs_int64 mfs_ftell(FILE* pFile)
 #endif
 
     return result;
+}
+
+#if !defined(_MSC_VER) && !((defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 1) || defined(_XOPEN_SOURCE) || defined(_POSIX_SOURCE)) && !(defined(__DragonFly__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__))
+int fileno(FILE *stream);
+#endif
+
+#if defined(_MSC_VER)
+mfs_result mfs_fstat(FILE* pFile, struct _stat64* info)
+#else
+mfs_result mfs_fstat(FILE* pFile, struct stat64* info);
+#endif
+{
+    int fd;
+
+#if defined(_MSC_VER)
+    fd = _fileno(pFile);
+#else
+    fd =  fileno(pFile);
+#endif
+
+#if defined(_MSC_VER)
+    if (_fstat64(fd, info) != 0) {
+#else
+    if (fstat64(fd, info) != 0) {
+#endif
+        return mfs_result_from_errno(errno);
+    }
+
+    return MFS_SUCCESS;
 }
 
 
