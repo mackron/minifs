@@ -699,7 +699,7 @@ IMPLEMENTATION
 
 *************************************************************************************************************************************************************
 ************************************************************************************************************************************************************/
-#if defined(MINIFS_IMPLEMENTATION)
+#if defined(MINIFS_IMPLEMENTATION) || defined(MFS_IMPLEMENTATION)
 #ifndef minifs_c
 #define minifs_c
 
@@ -1870,6 +1870,37 @@ mfs_result mfs_mkdir(const char* pDirectory, mfs_bool32 recursive)
             /* We need to append the path segment to the running path. */
             size_t newRunningPathLen;
 
+            /* Now that we have the running path we can check whether or not it exists. If it does not exists, it's created, so long as we're not looking at a file in which case we have an error. */
+            if (mfs_file_exists(pRunningPath)) {
+                MFS_FREE(pRunningPath);
+                return MFS_INVALID_OPERATION;   /* The path refers to a file. */
+            }
+
+            if (mfs_is_directory(pRunningPath) == MFS_FALSE) {
+            #if defined(MFS_WIN32)
+                result = mfs_mkdir__win32(pRunningPath);
+            #elif defined(MFS_POSIX)
+                result = mfs_mkdir__posix(pRunningPath);
+            #else
+                result = MFS_INVALID_OPERATION;   /* Unsupported platform. */
+            #endif
+                if (result != MFS_SUCCESS) {
+                    MFS_FREE(pRunningPath);
+                    return result;  /* An error occurred when creating the directory. */
+                }
+            }
+
+            /* We're done with this segment so move on to the next. */
+            result = mfs_path_next_segment(&iterator);
+            if (result != MFS_SUCCESS) {
+                if (result == MFS_AT_END) {
+                    break;  /* We're done. */
+                } else {
+                    MFS_FREE(pRunningPath);
+                    return result;
+                }
+            }
+
             /* Get the size of the new running path. */
             result = mfs_path_append_iterator(NULL, 0, pRunningPath, iterator, &newRunningPathLen);
             if (result != MFS_SUCCESS) {
@@ -1900,37 +1931,6 @@ mfs_result mfs_mkdir(const char* pDirectory, mfs_bool32 recursive)
             if (result != MFS_SUCCESS) {
                 MFS_FREE(pRunningPath);
                 return result;  /* Should never hit this as any error should have been returned by the first call that we used to measure the string. */
-            }
-
-            /* Now that we (finally!) have the running path we can check whether or not it exists. If it does not exists, it's created, so long as we're not looking at a file in which case we have an error. */
-            if (mfs_file_exists(pRunningPath)) {
-                MFS_FREE(pRunningPath);
-                return MFS_INVALID_OPERATION;   /* The path refers to a file. */
-            }
-
-            if (mfs_is_directory(pRunningPath) == MFS_FALSE) {
-            #if defined(MFS_WIN32)
-                result = mfs_mkdir__win32(pRunningPath);
-            #elif defined(MFS_POSIX)
-                result = mfs_mkdir__posix(pRunningPath);
-            #else
-                result = MFS_INVALID_OPERATION;   /* Unsupported platform. */
-            #endif
-                if (result != MFS_SUCCESS) {
-                    MFS_FREE(pRunningPath);
-                    return result;  /* An error occurred when creating the directory. */
-                }
-            }
-
-            /* We're done with this segment so move on to the next. */
-            result = mfs_path_next_segment(&iterator);
-            if (result != MFS_SUCCESS) {
-                if (result == MFS_AT_END) {
-                    break;  /* We're done. */
-                } else {
-                    MFS_FREE(pRunningPath);
-                    return result;
-                }
             }
         }
 
