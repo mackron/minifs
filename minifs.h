@@ -1874,6 +1874,7 @@ mfs_result mfs_mkdir(const char* pDirectory, mfs_bool32 recursive)
         mfs_path_iterator iterator;
         char* pRunningPath = NULL;
         size_t runningPathCap = 0;
+        size_t newRunningPathLen;
 
         result = mfs_path_first_segment(pDirectory, &iterator);
         if (result != MFS_SUCCESS) {
@@ -1898,6 +1899,38 @@ mfs_result mfs_mkdir(const char* pDirectory, mfs_bool32 recursive)
                     return result;
                 }
             }
+
+            /* Get the size of the new running path. */
+            result = mfs_path_append_iterator(NULL, 0, pRunningPath, iterator, &newRunningPathLen);
+            if (result != MFS_SUCCESS) {
+                MFS_FREE(pRunningPath);
+                return result;
+            }
+
+            /* Allocate memory for the running path if necessary. */
+            if (newRunningPathLen > runningPathCap+1) {
+                char* pNewRunningPath;
+                size_t newRunningPathCap = runningPathCap*2;
+                if (newRunningPathCap < newRunningPathLen+1) {
+                    newRunningPathCap = newRunningPathLen+1;
+                }
+
+                pNewRunningPath = (char*)MFS_REALLOC(pRunningPath, newRunningPathCap);
+                if (pNewRunningPath == NULL) {
+                    MFS_FREE(pRunningPath);
+                    return MFS_OUT_OF_MEMORY;
+                }
+
+                pRunningPath   = pNewRunningPath;
+                runningPathCap = newRunningPathCap;
+            }
+
+            /* Append the segment to the running path. */
+            result = mfs_path_append_iterator(pRunningPath, runningPathCap, pRunningPath, iterator, NULL);
+            if (result != MFS_SUCCESS) {
+                MFS_FREE(pRunningPath);
+                return result;  /* Should never hit this as any error should have been returned by the first call that we used to measure the string. */
+            }
         }
 
         /*
@@ -1905,9 +1938,6 @@ mfs_result mfs_mkdir(const char* pDirectory, mfs_bool32 recursive)
         until we reach the end of the path.
         */
         for (;;) {
-            /* We need to append the path segment to the running path. */
-            size_t newRunningPathLen;
-
             /* Now that we have the running path we can check whether or not it exists. If it does not exists, it's created, so long as we're not looking at a file in which case we have an error. */
             if (mfs_file_exists(pRunningPath)) {
                 MFS_FREE(pRunningPath);
