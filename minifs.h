@@ -3688,10 +3688,6 @@ mfs_result mfs_path_to_relative(char* dst, size_t dstSizeInBytes, const char* ab
         dst[0] = '\0';
     }
 
-    if (!mfs_path_is_absolute(absolutePathToMakeRelative) || !mfs_path_is_absolute(absolutePathToMakeRelativeTo)) {
-        return MFS_INVALID_ARGS;
-    }
-
     isPathEmpty = mfs_path_first_segment(absolutePathToMakeRelative,   &iPath) != MFS_SUCCESS;
     isBaseEmpty = mfs_path_first_segment(absolutePathToMakeRelativeTo, &iBase) != MFS_SUCCESS;
 
