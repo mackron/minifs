@@ -41,6 +41,13 @@ extern "C" {
     #endif
 #endif
 
+#if defined(_MSC_VER)
+    typedef struct _stat64 mfs_stat_info;
+#elif defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS == 64 && defined(_LARGEFILE64_SOURCE)
+    typedef struct stat64 mfs_stat_info;
+#else
+    typedef struct stat mfs_stat_info;
+#endif
 
 /* Sized types. Prefer built-in types. Fall back to stdint. */
 #include <stddef.h> /* For size_t. */
@@ -224,11 +231,7 @@ mfs_int64 mfs_ftell(FILE* pFile);
 /*
 Retrieves information about a stdio FILE object.
 */
-#if defined(_MSC_VER)
-mfs_result mfs_fstat(FILE* pFile, struct _stat64* info);
-#else
-mfs_result mfs_fstat(FILE* pFile, struct stat64* info);
-#endif
+mfs_result mfs_fstat(FILE* pFile, mfs_stat_info* info);
 
 
 
@@ -1605,11 +1608,7 @@ mfs_int64 mfs_ftell(FILE* pFile)
 int fileno(FILE *stream);
 #endif
 
-#if defined(_MSC_VER)
-mfs_result mfs_fstat(FILE* pFile, struct _stat64* info)
-#else
-mfs_result mfs_fstat(FILE* pFile, struct stat64* info);
-#endif
+mfs_result mfs_fstat(FILE* pFile, mfs_stat_info* info)
 {
     int fd;
 
@@ -1621,8 +1620,10 @@ mfs_result mfs_fstat(FILE* pFile, struct stat64* info);
 
 #if defined(_MSC_VER)
     if (_fstat64(fd, info) != 0) {
-#else
+#elif defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS == 64 && defined(_LARGEFILE64_SOURCE)
     if (fstat64(fd, info) != 0) {
+#else
+    if (fstat(fd, info) != 0) {
 #endif
         return mfs_result_from_errno(errno);
     }
@@ -2107,6 +2108,7 @@ mfs_bool32 mfs_file_exists__posix(const char* pFilePath)
 mfs_result mfs_copy_file__posix(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists)
 {
     /* TODO: Implement me. */
+    return MFS_ERROR;
 }
 
 mfs_result mfs_move_file__posix(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists)
