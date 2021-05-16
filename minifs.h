@@ -800,6 +800,7 @@ mfs_result mfs_result_from_GetLastError(DWORD error)
 #include <sys/stat.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <fcntl.h> /* For open() flags. */
 #include <strings.h>    /* For strcasecmp(). */
 #endif
 
@@ -2107,8 +2108,69 @@ mfs_bool32 mfs_file_exists__posix(const char* pFilePath)
 
 mfs_result mfs_copy_file__posix(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists)
 {
-    /* TODO: Implement me. */
-    return MFS_ERROR;
+    mfs_result res;
+    int inFd, outFd;
+    struct stat info;
+    ssize_t writeBytes, readBytes, writtenBytes;
+    char buff[4096];
+
+    /* Checks weather the destination file exists. */
+    if (failIfExists && stat(pDstFilePath, &info) == 0) {
+        return MFS_ALREADY_EXISTS;
+    }
+
+    /* Acquire a file descriptor for the input file. */
+    inFd = open(pSrcFilePath, O_RDONLY);
+    if (inFd < 0) {
+        res = mfs_result_from_errno(errno);
+        return res;
+    }
+
+    /* Retrieve mode information of the input file. */
+    if (fstat(inFd, &info) != 0) {
+        res = mfs_result_from_errno(errno);
+        close(inFd);
+        return res;
+    }
+
+    /* Create an output file and acquire its FD. */
+    outFd = open(pDstFilePath, O_CREAT | O_WRONLY | O_TRUNC, info.st_mode);
+    if (outFd < 0) {
+        res = mfs_result_from_errno(errno);
+        close(inFd);
+        return res;
+    }
+
+    /* Perform file copy in chunks until end of file. */
+    do {
+        readBytes = read(inFd, buff, sizeof(buff));
+
+        if (readBytes < 0) { /* Read error. */
+            res = mfs_result_from_errno(errno);
+            close(inFd);
+            close(outFd);
+            return res;
+        } else if (readBytes > 0) { /* Read some bytes. */
+            writtenBytes = 0;
+            do { /* Keep writing until all read bytes are written. */
+                writeBytes = write(outFd, &buff[writtenBytes], readBytes - writtenBytes);
+                if (writeBytes < 0) { /* Write error. */
+                    res = mfs_result_from_errno(errno);
+                    close(inFd);
+                    close(outFd);
+                    return res;
+                }
+                /* The write may be incomplete, thus we should keep writing until finished or an error. */
+                writtenBytes += writeBytes;
+            } while (writtenBytes < readBytes);
+        }
+    } while (readBytes > 0);
+
+    /* Close both FDs. */
+    close(outFd);
+    close(inFd);
+
+    return MFS_SUCCESS;
 }
 
 mfs_result mfs_move_file__posix(const char* pSrcFilePath, const char* pDstFilePath, mfs_bool32 failIfExists)
