@@ -1390,7 +1390,7 @@ mfs_bool32 mfs_string_is_null_or_empty(const char* str)
 
 mfs_result mfs_fopen(FILE** ppFile, const char* pFilePath, const char* pOpenMode)
 {
-#if _MSC_VER
+#if defined(_MSC_VER) && _MSC_VER >= 1400
     errno_t err;
 #endif
 
@@ -1402,7 +1402,7 @@ mfs_result mfs_fopen(FILE** ppFile, const char* pFilePath, const char* pOpenMode
         return MFS_INVALID_ARGS;
     }
 
-#if _MSC_VER
+#if defined(_MSC_VER) && _MSC_VER >= 1400
     err = fopen_s(ppFile, pFilePath, pOpenMode);
     if (err != 0) {
         return mfs_result_from_errno(err);
@@ -1449,7 +1449,7 @@ fallback, so if you notice your compiler not detecting this properly I'm happy t
 
 mfs_result mfs_wfopen(FILE** ppFile, const wchar_t* pFilePath, const wchar_t* pOpenMode)
 {
-#if _MSC_VER
+#if defined(_MSC_VER) && _MSC_VER >= 1400
     errno_t err;
 #endif
 
