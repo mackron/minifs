@@ -2062,7 +2062,7 @@ mfs_result mfs_rmdir_content(const char* pDirectory)
         /* Get the length first. */
         result = mfs_path_append(NULL, 0, pDirectory, fi.pFileName, &filePathLen);
         if (result == MFS_SUCCESS) {
-            pFilePath = MFS_MALLOC(filePathLen + 1);    /* +1 for null terminator. */
+            pFilePath = (char*)MFS_MALLOC(filePathLen + 1);    /* +1 for null terminator. */
             if (pFilePath != NULL) {
                 result = mfs_path_append(pFilePath, filePathLen + 1, pDirectory, fi.pFileName, NULL);
                 if (result == MFS_SUCCESS) {
