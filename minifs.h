@@ -280,6 +280,16 @@ Creates a directory.
 */
 mfs_result mfs_mkdir(const char* pDirectory, mfs_bool32 recursive);
 
+/*
+Deletes a directory.
+*/
+mfs_result mfs_rmdir(const char* pDirectory, mfs_bool32 recursive);
+
+/*
+Recursively deletes the contents of a directory.
+*/
+mfs_result mfs_rmdir_content(const char* pDirectory);
+
 
 /*
 Checks if the given path refers to an existing directory.
@@ -2007,6 +2017,78 @@ mfs_result mfs_mkdir(const char* pDirectory, mfs_bool32 recursive)
         MFS_FREE(pRunningPath);
         return MFS_SUCCESS;
     }
+}
+
+mfs_result mfs_rmdir(const char* pDirectory, mfs_bool32 recursive)
+{
+    if (pDirectory == NULL) {
+        return MFS_INVALID_ARGS;
+    }
+
+    if (mfs_is_directory(pDirectory) == MFS_FALSE) {
+        return MFS_NOT_DIRECTORY;
+    }
+
+    if (recursive) {
+        mfs_result result = mfs_rmdir_content(pDirectory);
+        if (result != MFS_SUCCESS) {
+            return result;  /* Failed to delete the content of the directory. */
+        }
+    }
+
+    return mfs_delete_file(pDirectory);
+}
+
+mfs_result mfs_rmdir_content(const char* pDirectory)
+{
+    /* We'll use an iterator for this. */
+    mfs_result result;
+    mfs_iterator iterator;
+    mfs_file_info fi;
+
+    if (pDirectory == NULL) {
+        return MFS_INVALID_ARGS;
+    }
+
+    result = mfs_iterator_init(pDirectory, &iterator);
+    if (result != MFS_SUCCESS) {
+        return result;  /* Failed to initialize iterator. */
+    }
+
+    while (mfs_iterator_next(&iterator, &fi) == MFS_SUCCESS) {
+        char* pFilePath;
+        size_t filePathLen;
+
+        /* Get the length first. */
+        result = mfs_path_append(NULL, 0, pDirectory, fi.pFileName, &filePathLen);
+        if (result == MFS_SUCCESS) {
+            pFilePath = MFS_MALLOC(filePathLen + 1);    /* +1 for null terminator. */
+            if (pFilePath != NULL) {
+                result = mfs_path_append(pFilePath, filePathLen + 1, pDirectory, fi.pFileName, NULL);
+                if (result == MFS_SUCCESS) {
+                    if (fi.isDirectory) {
+                        if (fi.pFileName[0] == '.' && fi.pFileName[1] == '\0') {
+                            /* "." - ignore. */
+                        } else if (fi.pFileName[0] == '.' && fi.pFileName[1] == '.' && fi.pFileName[2] == '\0') {
+                            /* ".." - ignore. */
+                        } else {
+                            mfs_rmdir(pFilePath, MFS_TRUE);
+                        }
+                    } else {
+                        mfs_delete_file(pFilePath);
+                    }
+                } else {
+                    /* Failed to create file path. */
+                }
+            } else {
+                return MFS_OUT_OF_MEMORY;
+            }
+        } else {
+            /* Failed to retrieve the file path length. */
+        }
+    }
+
+    return MFS_SUCCESS;
 }
 
 
