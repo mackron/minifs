@@ -806,6 +806,7 @@ mfs_result mfs_result_from_GetLastError(DWORD error)
 }
 #endif
 #if defined(MFS_POSIX)
+#define _XOPEN_SOURCE
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
