@@ -69,6 +69,7 @@ extern "C" {
         #pragma GCC diagnostic pop
     #endif
 #else
+	#define _XOPEN_SOURCE
     #define MFS_HAS_STDINT
     #include <stdint.h>
     typedef int8_t   mfs_int8;
