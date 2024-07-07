@@ -1,1 +1,1 @@
-minifs is a library for common file system operations.
+This is no longer being maintained. Superceded by https://github.com/mackron/fs
